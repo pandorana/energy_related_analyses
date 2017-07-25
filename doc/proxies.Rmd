@@ -1,0 +1,160 @@
+---
+title: "Finding proxies for energy consumption by exploratory data analysis (EDA), and test if they correlate with installtion of renewable energy"
+author: "Yangguang Li"
+date: "10/07/2017"
+output:
+  html_document:
+    fig_caption: yes
+  html_notebook: default
+---
+``` {r load_libraries, message=FALSE, warning = FALSE}
+setwd("..")
+# Loading the environment
+library(ProjectTemplate)
+load.project()
+```
+```{r global_options, echo=FALSE}
+knitr::opts_chunk$set(fig.path="../graphs/")
+```
+The analyses were done on two data sets: Living Cost and Food Survey (LCF) and Understanding Society (UK Household Longitudinal Study, UKHLS).
+
+## Living Cost and Food Survey (LCF)
+
+### Data set
+We combined two data sets of households and grouped individual expenditures for each household in dv_set to be the sample used. 
+
+However, the variables we chosed to scrutinise from data set dv_set, 5.3.1.3.2 (elec_cookers), 5.3.1.4.1 (heaters), 5.5.1.1.1 (elec_tools), 5.5.2.1.4 (elec_consumables), 9.1.1.1.1 (audio_equipment), and 9.1.1.1.3 (accessories_audio_equip), were not available for all households, and after tranforming and filtering out the observations that had missing values, we had `r 0` left. Also all households had reported energy consumption did not use renewable energy, making the `r nrow(lcf_explo)` observations available had no positive responses.
+
+Hence it was impossible to do the analysis on LCF.
+
+The process of munging data can be found at [munge_data LCF](../munge/01-lcf-data.R).
+
+## Understanding Society (UK Household Longitudinal Study, UKHLS)
+
+### Data set
+We used the wave d of UKHLS (deposited Nov. 2014) for the analysis. All the variables below have been removed the prefix 'd_'. The sample had `r nrow(d_hh)` observations, and among them `r nrow(d_hh) - nrow(ukhls_explo)` were discarded (`r nrow(ukhls_explo)` left) as they had missing values.
+
+First we found the proxies for energy consumption through EDA, and then tested if they were correlated with the installtion of renewable energy.
+
+Dependent variables:  
+1. xpduely (amount electricity and gas), xpelecy (amount electricity), xpgasy (amount gas), xpoily (amount oil), and xpsfly (amount other fuel), are sumed as **energy** to estimate the energy consumption of the household.  
+2. solar1 (install solar panels for electricity), solar2 (install solar water heating), and solar3 (install wind turbine to generate electricity) are grouped into single variable **renewable** which is TRUE if any of them was answered yes.
+
+There were three classes of independent variables were scrutinized, including:  
+1. solar1, solar2, and solar3  
+2. cduse1 through to cduse13 (possesion of 13 kinds of appliances, detailed in the table beneath)  
+3. fuelduel, duelpay, xpelecy, elecpay, xpgasy, gaspay (consumption data about energy, detailed in the table beneath)  
+
+#### Munging
+``` {r ukhls_explo_variables, echo = FALSE}
+tribble(
+  ~Former, ~Tranformed, ~Categories,
+  "xpduely, xpelecy, xpgasy, xpoily, and xpsfly", "energy (£/yr)", writeContinuous(ukhls_explo$energy),
+  "solar1, solar2, solar3", "renewable", writeCategories(ukhls_explo %>% count(renewable)),
+  "solar1", "solar_elec", writeCategories(ukhls_explo %>% count(solar_elec)),
+  "solar2", "solar_heating", writeCategories(ukhls_explo %>% count(solar_heating)),
+  "solar3", "wind_tur", writeCategories(ukhls_explo %>% count(wind_tur)),
+  "cduse1", "color_tv", writeCategories(ukhls_explo %>% count(color_tv)),
+  "cduse2", "video_recorder_or_dvd_player", writeCategories(ukhls_explo %>% count(video_recorder_or_dvd_player)),
+  "cduse3", "satellite_dish_or_sky_tv", writeCategories(ukhls_explo %>% count(satellite_dish_or_sky_tv)),
+  "cduse4", "cable_tv", writeCategories(ukhls_explo %>% count(cable_tv)),
+  "cduse5", "fridge_freezer", writeCategories(ukhls_explo %>% count(fridge_freezer)),
+  "cduse6", "washing_machine", writeCategories(ukhls_explo %>% count(washing_machine)),
+  "cduse7", "tumble_dryer", writeCategories(ukhls_explo %>% count(tumble_dryer)),
+  "cduse8", "dish_washer", writeCategories(ukhls_explo %>% count(dish_washer)),
+  "cduse9", "microwave", writeCategories(ukhls_explo %>% count(microwave)),
+  "cduse10", "pc", writeCategories(ukhls_explo %>% count(pc)),
+  "cduse11", "disc_player", writeCategories(ukhls_explo %>% count(disc_player)),
+  "cduse12", "telephone", writeCategories(ukhls_explo %>% count(telephone)),
+  "cduse13", "mobile", writeCategories(ukhls_explo %>% count(mobile)),
+  "fuelduel", "separate_or_combined_bills", writeCategories(ukhls_explo %>% count(separate_or_combined_bills)),
+  "duelpay", "payment_method", writeCategories(ukhls_explo %>% count(payment_method)),
+  "xpelecy", "elec_amount (£/yr)", writeContinuous(ukhls_explo$elec_amount),
+  "elecpay", "elec_pay_method", writeCategories(ukhls_explo %>% count(elec_pay_method)),
+  "xpgasy", "gas_amount (£/yr)", writeContinuous(ukhls_explo$gas_amount),
+  "gaspay", "gas_pay_method", writeCategories(ukhls_explo %>% count(gas_pay_method))
+) %>% kable()
+```
+
+The process of munging data can be found at [munge_data UKHLS](../munge/05-ukhls-data.R).  
+``` {r UKHLS_explo_data, echo = FALSE}
+ukhls_explo %>% head(5) %>% select(hidp:satellite_dish_or_sky_tv) %>% kable()
+ukhls_explo %>% head(5) %>% select(hidp,cable_tv:telephone) %>% kable()
+ukhls_explo %>% head(5) %>% select(hidp,mobile:gas_pay_method) %>% kable()
+```
+
+### Analysis
+
+The analysis script can be found at [analysis_proxies UKHLS](../munge/08-ukhls-proxies.R)
+
+#### EDA: finding proxies
+We first fitted for each independent variable a linear model predicting the energy consumption, then depending on the adjusted $R^2$ of those models and plots of energy consumption versus the corresponding variables, we found the following proxies: tumble_dryer (adjusted $R^2$ = `r writePercent(glance(ukhls_proxy_tumble_dryer)[[2]])`%), dish_washer (`r writePercent(glance(ukhls_proxy_dish_washer)[[2]])`%), pc (`r writePercent(glance(ukhls_proxy_pc)[[2]])`%), elec_amount (`r writePercent(glance(ukhls_proxy_elec_amount)[[2]])`%), and gas_amount (`r writePercent(glance(ukhls_proxy_gas_amount)[[2]])`%). All of the models' p values were <= 0.01.
+``` {r proxy_adj_r.sq_and_plot, echo = FALSE}
+plot1 <- ukhls_explo %>% ggplot(aes(energy, ..density..)) + geom_freqpoly(aes(color = tumble_dryer), binwidth = 300)
+plot2 <- ukhls_explo %>% ggplot(aes(energy, ..density..)) + geom_freqpoly(aes(color = dish_washer), binwidth = 300)
+plot3 <- ukhls_explo %>% ggplot(aes(energy, ..density..)) + geom_freqpoly(aes(color = pc), binwidth = 300)
+grid.arrange(plot1, plot2, plot3, nrow = 3)
+ukhls_explo %>% ggplot(aes(gas_amount, energy)) + geom_point(position = "jitter")
+ukhls_explo %>% ggplot(aes(elec_amount, energy)) + geom_point(position = "jitter")
+```
+
+Then we fitted the model with energy consumption as dependent variables, and independent variabls being the proxies found.
+
+`energy ~ tumble_dryer + dish_washer + pc + elec_amount + gas_amount`   
+The variables combined`r hasSignificance(ukhls_proxy_all)` explained `r writePercent(glance(ukhls_proxy_all)[[1]])`% of the variability in energy consumption (adjusted $R^2$ = `r writePercent(glance(ukhls_proxy_all)[[2]])`%), F(`r glance(ukhls_proxy_all)[["df"]]`, `r glance(ukhls_proxy_all)[["df.residual"]]`) = `r writeNum(glance(ukhls_proxy_all)[["statistic"]])`, p = `r writePValue(glance(ukhls_proxy_all)[["p.value"]])`. None of the VIFs were greater than 5. Detailed regression result can be found at [Table A](#table-a).
+``` {r EDA_all, echo = FALSE}
+vif(ukhls_proxy_all) %>% as.tibble() %>% rename(VIF = value) %>% kable()
+```
+
+And then we tested the correlation between all proxies and installation of renewable energy.
+
+#### Test correlation
+Since the dependent variables were all binary, we used logistic regression for fitting the models, and we used McFadden's pseudo $R^2 = 1 - \frac{ln(\hat{L}_M)}{ln(\hat{L}_0)}$ where $\hat{L}_M$ and $\hat{L}_0$ are likelihoods for the model being fitted and the null model for analysis.
+
+1. `renewable ~ all proxies`  
+The model fitted`r hasSignificance(ukhls_proxy_result)` had pseudo $R^2$ of `r writeNum(analysis_Logit(ukhls_proxy_result)[[1]])` and p = `r writePValue(analysis_Logit(ukhls_proxy_result)[[2]])`. All VIFs were smaller than 5. Detailed regression result can be found at [Table B](#table-b).
+``` {r ukhls_proxy_result, echo = FALSE}
+vif(ukhls_proxy_result) %>% as.tibble() %>% rename(VIF = value) %>% kable()
+```
+
+2. `solar_elec ~ all proxies`  
+The model fitted`r hasSignificance(ukhls_proxy_solar_elec_result)` had pseudo $R^2$ of `r writeNum(analysis_Logit(ukhls_proxy_solar_elec_result)[[1]])` and p = `r writePValue(analysis_Logit(ukhls_proxy_solar_elec_result)[[2]])`. All VIFs were smaller than 5.
+
+3. `solar_heating ~ all proxies`  
+The model fitted`r hasSignificance(ukhls_proxy_solar_heating_result)` had pseudo $R^2$ of `r writeNum(analysis_Logit(ukhls_proxy_solar_heating_result)[[1]])` and p = `r writePValue(analysis_Logit(ukhls_proxy_solar_heating_result)[[2]])`. All VIFs were smaller than 5.
+
+4. `wind_tur ~ all proxies`  
+The model fitted`r hasSignificance(ukhls_proxy_solar_heating_result)` had pseudo $R^2$ of `r writeNum(analysis_Logit(ukhls_proxy_solar_heating_result)[[1]])` and p = `r writePValue(analysis_Logit(ukhls_proxy_solar_heating_result)[[2]])`. All VIFs were smaller than 5.
+
+## Appendix
+
+##### Table A   
+Results of the OLS regression. Here the table, B means unstandardised coefficient, β standardised coefficient. All proxies.
+``` {r table-a, echo = FALSE}
+temp <- tribble(
+  ~Predictor,
+  "Tumble Dryer",
+  "Dish Washer",
+  "PC",
+  "Amount Electricity",
+  "Amount Gas",
+  "Intercept"
+) 
+temp %>% cbind(tidy.beta(ukhls_proxy_all)) %>%
+  rename(B = Estimate, β = Standardized, SE = `Std. Error`) %>% 
+  mutate(Predictor = predictor_add_stars(Predictor, `Pr(>|t|)`)) %>%
+  select(Predictor, B, SE, β) %>%
+  kable()
+```
+
+Signif.codes: \*\*\* 0.001, \*\* 0.01, * 0.05
+
+##### Table B
+Results of the logistic regression. All proxies.
+``` {r table-b, echo = FALSE}
+temp %>% cbind(tidy(ukhls_proxy_result)) %>%
+  rename(B = estimate, SE = std.error, z = statistic, `P(>|z|)` = p.value) %>% 
+  mutate(Predictor = predictor_add_stars(Predictor, `P(>|z|)`)) %>%
+  select(-term) %>%
+  kable()
+```

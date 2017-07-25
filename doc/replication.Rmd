@@ -1,0 +1,458 @@
+---
+title: Replecating Huebner et al.\'s analyses about variables explaining UK\'s households
+  energy consumption
+author: "Yangguang Li"
+date: "23/06/2017"
+output:
+  html_document:
+    fig_caption: yes
+  html_notebook: default
+---
+``` {r load_libraries, message=FALSE, warning = FALSE}
+setwd("..")
+# Loading the environment
+library(ProjectTemplate)
+load.project()
+```
+```{r global_options, echo=FALSE}
+knitr::opts_chunk$set(fig.path="../graphs/")
+```
+The analyses were done on two data sets: Living Cost and Food Survey (LCF) and Understanding Society (UK Household Longitudinal Study, UKHLS).
+
+## Living Cost and Food Survey (LCF)
+
+### Data set
+The sample size was `r nrow(lcf_data)` and energy consumption was available for `r nrow(lcf_data %>% filter(fuel_consum > 0))` households. Of those `r nrow(lcf_data %>% filter(fuel_consum > 0))` households, another `r nrow(lcf_data %>% filter(fuel_consum > 0)) - nrow(lcf_consum)` were excluded as the energy consumption was considered extreme (&plusmn;3 SD (`r writeNum(3 * sd(lcf_consum$fuel_consum))`) from the mean (`r writeNum(mean(lcf_consum$fuel_consum))`) of energy consumption), or as the observation caused singularities in some other categorical variables (e.g. dwelling type).
+
+The Huebner et al.'s essay had 4 categories of predictors, but in this data set we could not find anything about heating behaviours and attitudes toward climate change, energy-saving actions, and self-reported heating practices, hence we only included building variables and socio-demographic variables.
+
+1. Dependent variable: p117t, the total spending on fuel for a household, was used to aproximate the energy consumption of the household. Since the distribution of this variable was positive skewed, we did the natural log transformation for it to make it more symmetric.  
+``` {r lcf_energy_distribution, echo = FALSE}
+lcf_consum %>% ggplot(aes(x = fuel_consum)) + geom_density()
+lcf_consum %>% ggplot(aes(x = log(fuel_consum))) + geom_density()
+```
+
+2. Building variables  
+The a116 (category the dwelling), a114p (rooms in accomodation), and gorx (government office region) were chosen to represent the characteristic of the building.  
+Also varibales a150 (Central heating (CH) by electricity), a151 (CH by gas), a152 (CH by oil), a153 (CH by solid fuel), a154 (CH by solid fuel and oil), a155 (CH by calor gas), a156 (Other gas CH) were grouped into one variable with "no_record" added if none of them applied to the household.
+
+3. Socio-demorgraphic variables  
+The a049 (household size), incanon (household income and allowances), p396p (age of HRP), a040 - a042 (the age of the youngest child), a121 (tenure type), p304 (employment), a131 (the number of years the household reference person (HRP) lived in the addresses), SexHRP (sex of the HRP), and a070p (the age of oldest person in the household) were used for analysis.
+
+#### Munging
+To have a better representation of the data, the following changes had been made:
+``` {r lcf_variables, echo = FALSE}
+tribble(
+  ~Former, ~Transformed, ~Categories,
+  "p117t", "fuel_consum (£/wk)", writeContinuous(lcf_consum$fuel_consum),
+  "a116", "dwelling_type", writeCategories(lcf_consum %>% count(dwelling_type)),
+  "a114p", "no_rooms", writeContinuous(lcf_consum$no_rooms),
+  "gorx", "gov", writeCategories(lcf_consum %>% count(gov)),
+  "a150 - a156", "ch_type", writeCategories(lcf_consum %>% count(ch_type)),
+  "a049", "hh_size", writeContinuous(lcf_consum$hh_size),
+  "incanon", "income (£/wk)", writeContinuous(lcf_consum$income),
+  "p396p", "hrp_age", writeContinuous(lcf_consum$hrp_age),
+  "sexhrp", "hrp_sex", writeCategories(lcf_consum %>% count(hrp_sex)),
+  "a040 - a042", "youngest", writeCategories(lcf_consum %>% count(youngest)),
+  "a121", "tenure", writeCategories(lcf_consum %>% count(tenure)),
+  "p304", "unemployed", writeCategories(lcf_consum %>% count(unemployed)),
+  "a131", "residency_length (years)", writeContinuous(lcf_consum$residency_length),
+  "a070p", "over75", writeCategories(lcf_consum %>% count(over75))
+) %>% kable()
+```
+
+The process of munging data can be found at [munge_data LCF](../munge/01-lcf-data.R).
+``` {r lcf_lcf_data_consum, echo = FALSE}
+lcf_consum %>% head(5) %>% select(case:hrp_age) %>% kable()
+lcf_consum %>% head(5) %>% select(case, hrp_sex:over75) %>% kable()
+```
+
+### Correlation Analysis
+Now we are going to check if the variables examined in the essay by Huebner et al., 2015 are still correlated with the energy consumption in this data set.  
+
+Firstly the linear ordinary least squares (OLS) regression analysis was performed separately for the two classes of variables as presented above. Then we checked for the colinearity issue by inspecing the variance-inflation factors (VIF), and any variables give VIF higher than 5 leaded to Lasso regression being employed.
+
+The process of analysing can be found at [analysis_consum LCF](../munge/02-lcf-consumption.R).
+
+#### Individual models
+1. `log(fuel_consum) ~ dwelling_type + no_rooms + gov + ch_type`  
+All **building variables** together`r hasSignificance(lcf_consum_building_mod)` explained `r writePercent(glance(lcf_consum_building_mod)[[1]])`% of the variability in energy consumption (adjusted $R^2$ = `r writePercent(glance(lcf_consum_building_mod)[[2]])`%), F(`r glance(lcf_consum_building_mod)[["df"]]`, `r glance(lcf_consum_building_mod)[["df.residual"]]`) = `r writeNum(glance(lcf_consum_building_mod)[["statistic"]])`, p = `r writePValue(glance(lcf_consum_building_mod)[["p.value"]])`. None of the VIFs were greater than 5.
+``` {r lcf_consum_building_mod, echo = FALSE}
+vif(lcf_consum_building_mod) %>% kable()
+```  
+
+2. `log(fuel_consum) ~ hh_size + unemployed + income + hrp_age + residency_length + over75 + `  
+    `  youngest + hrp_sex + tenure`  
+The **socio-demographic variables**`r hasSignificance(lcf_consum_socio_mod)` explained `r writePercent(glance(lcf_consum_socio_mod)[[1]])`% (adjusted $R^2$ = `r writePercent(glance(lcf_consum_socio_mod)[[2]])`%) of the variability in energy consumption, F(`r glance(lcf_consum_socio_mod)[["df"]]`, `r glance(lcf_consum_socio_mod)[["df.residual"]]`) = `r writeNum(glance(lcf_consum_socio_mod)[["statistic"]])`, p = `r writePValue(glance(lcf_consum_socio_mod)[["p.value"]])`. None of the variables have VIF higher than 5.  
+``` {r lcf_consum_socio_mod, echo = FALSE}
+vif(lcf_consum_socio_mod) %>% kable()
+```  
+
+#### Combined models
+`log(fuel_consum) ~ dwelling_type + no_rooms + gov + ch_type + `  
+`             hh_size + unemployed + income + hrp_age + residency_length + over75 + youngest + hrp_sex + tenure`  
+**Building + Socio-demographic**: The model`r hasSignificance(lcf_consum_building_socio_mod)` explained `r writePercent(glance(lcf_consum_building_socio_mod)[[1]])`% (adjusted $R^2$ = `r writePercent(glance(lcf_consum_building_socio_mod)[[2]])`%) of the variability in energy consumption, F(`r glance(lcf_consum_building_socio_mod)[["df"]]`, `r glance(lcf_consum_building_socio_mod)[["df.residual"]]`) = `r writeNum(glance(lcf_consum_building_socio_mod)[["statistic"]])`, p = `r writePValue(glance(lcf_consum_building_socio_mod)[["p.value"]])`.  
+An ANOVA showed that the difference in explanatory power between the model containing building variables only and that containing socio-demographic variables in addition was not significant (p = `r writePValue(lcf_consum_building_2_building_socio_aov$"Pr(>F)"[2])`) implying that inclusion of socio-demographic variables does not affect the explanatory power of the model.  
+All the variables had VIF less than 5. The detailed regression result can be found at [Table A.1](#table-a.1).
+``` {r lcf_all_mod_consum, echo = FALSE}
+vif(lcf_consum_building_socio_mod) %>% kable()
+```
+
+Fig. 1a shows the adjusted $R^2$ for the three individual models and Fig. 1b shows the adjusted $R^2$ for the combined models.
+``` {r lcf_result, message = FALSE, echo = FALSE, fig.cap = "Fig 1. Adjusted $R^2$ (%) for the three models (a) and for the combined models (b)."}
+lcf_adj_ind <- tibble(
+  models = c("building","socio-demographic"), 
+  adj = c(glance(lcf_consum_building_mod)[[2]], glance(lcf_consum_socio_mod)[[2]]))
+plot1 <- lcf_adj_ind %>% ggplot() + 
+  geom_bar(aes(x = models, y = adj, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("1a") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+lcf_adj_comb <- tibble(
+  models = c("building","building_socio"), 
+  adj = c(glance(lcf_consum_building_mod)[[2]], glance(lcf_consum_building_socio_mod)[[2]]))
+plot2 <- lcf_adj_comb %>% ggplot() + 
+  geom_bar(aes(x = models, y = adj, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("1b") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+## Understanding Society (UK Household Longitudinal Study, UKHLS)
+
+### Data set
+After combining the six waves' data, the sample had `r nrow(ukhls_data)` observations in total. And among them `r nrow(ukhls_data %>% filter(xpduely > 0 | xpoily >0 | xpsfly > 0))` had reported energy consumption. For those `r nrow(ukhls_data %>% filter(xpduely > 0 | xpoily >0 | xpsfly > 0))` observations, `r nrow(ukhls_data %>% filter(xpduely > 0 | xpoily >0 | xpsfly > 0)) - nrow(ukhls_consum)` were excluded (`r nrow(ukhls_consum)` left) since the energy consumptions were considered extreme (&plusmn;3 SD (`r writeNum(3 * sd(ukhls_consum$energy))`) from the mean (`r writeNum(mean(ukhls_consum$energy))`) of energy consumption), too extreme in the number of bedrooms and other rooms, had missed value in some variables, or had singularity.
+
+This time we have all the 4 categories in the Huebner et al.'s essay: building characteristics, socio-demographics, heating pattern, and attitudes toward climate change, energy-saving actions (all the variables below have been removed the prefix 'x_').
+
+1. Dependent variable: xpduely (amount electricity and gas), xpelecy (amount electricity), xpgasy (amount gas), xpoily (amount oil), and xpsfly (amount other fuel),  were sumed to estimate the energy consumption of the household.
+
+2. Building characteristics  
+The gor_dv (government office region), hsbeds (number of bedrooms), and hsrooms(number of other rooms) are the variables in this data set could be found to represent the building characteristics. And fuelhave1 (electricity), fuelhave2 (gas), fuelhave3 (oil), fuelhave4 (other fuel) are included.  
+fuelhave96 (none of the mentioned fuel) was excluded since it has singularity in the sample that has reported energy consumption.
+
+3. Socio-demographic  
+The hhsize (household size), fihhmngrs_dv (income), nemp_dvn (number of people who was employed), npens_dv (number of people who is over pensionable age), agechy_dv (age of the youngest child), tenure_dv (tenure type), and hsyrbuy (the year became owner) were chosen for the analysis.
+
+4. Heating pattern  
+Variable heatch (central heating) was in this group.
+
+5. Attitudes  
+The etariff (considering green tariff, only available in waves a and d) was the only thing we found to represent household's attitude.
+
+#### Munging
+To have a better representation of the data, the following changes had been made:
+``` {r ukhls_variables, echo = FALSE}
+tribble(
+  ~Former, ~Transformed, ~Categories,
+  "xpduely, xpelecy, xpgasy, xpoily, and xpsfly", "energy (£/yr)", writeContinuous(ukhls_consum$energy),
+  "gor_dv", "gov", writeCategories(ukhls_consum %>% count(gov)),
+  "hsbeds", "no_bedroom", writeContinuous(ukhls_consum$no_bedroom),
+  "hsrooms", "no_otherrooms", writeContinuous(ukhls_consum$no_otherrooms),
+  "fuelhave1", "elec", writeCategories(ukhls_consum %>% count(elec)),
+  "fuelhave2", "gas", writeCategories(ukhls_consum %>% count(gas)),
+  "fuelhave3", "oil", writeCategories(ukhls_consum %>% count(oil)),
+  "fuelhave4", "other_fuel", writeCategories(ukhls_consum %>% count(other_fuel)),
+  "hhsize", "hhsize", writeContinuous(ukhls_consum$hhsize),
+  "fihhmngrs_dv", "income (£/mo)", writeContinuous(ukhls_consum$income), 
+  "nemp_dv", "employment (people)", writeCategories(ukhls_consum %>% count(employment)),
+  "npens_dv", "over65", writeCategories(ukhls_consum %>% count(over65)),
+  "agechy_dv", "youngest", writeCategories(ukhls_consum %>% count(youngest)),
+  "tenure_dv", "tenure", writeCategories(ukhls_consum %>% count(tenure)),
+  "hsyrbuy", "residency_length (years)", writeContinuous(ukhls_consum$residency_length),
+  "heatch", "ch", writeCategories(ukhls_consum %>% count(ch)),
+  "", "etariff", writeCategories(ukhls_consum %>% count(etariff))
+) %>% mutate(Categories = as.character(Categories)) %>% kable()
+```
+
+The process of munging data can be found at [munge_data UKHLS](../munge/05-ukhls-data.R).
+``` {r ukhls_hh, echo = FALSE}
+ukhls_consum %>% head(5) %>% select(hidp:income) %>% kable()
+ukhls_consum %>% head(5) %>% select(hidp,employment:etariff) %>% kable()
+```
+
+### Correlation Analysis
+Now we are going to check if the variables examined in the essay by Huebner et al., 2015 are still correlated with the energy consumption in this data set again.  
+
+Firstly the linear ordinary least squares (OLS) regression analysis was performed separately for the four classes of variables as presented above. Then we checked for the colinearity issue by inspecing the variance-inflation factors (VIF), and any variables give VIF higher than 5 leaded to Lasso regression being employed.
+
+The process of analysing can be found at [analysis_consum UKHLS](../munge/06-ukhls-consumption.R).
+
+#### Individual models
+1. `energy ~ gov + no_bedroom + no_otherrooms + elec + gas + oil + other_fuel`  
+All **building characteristics**`r hasSignificance(lcf_consum_building_mod)` together explained `r writePercent(glance(ukhls_consum_building_mod)[[1]])`% of the variability in energy consumption (adjusted $R^2$ = `r writePercent(glance(ukhls_consum_building_mod)[[2]])`%), F(`r glance(ukhls_consum_building_mod)[["df"]]`, `r glance(ukhls_consum_building_mod)[["df.residual"]]`) = `r writeNum(glance(ukhls_consum_building_mod)[["statistic"]])`, p = `r writePValue(glance(ukhls_consum_building_mod)[["p.value"]])`. None of the  VIF were greater than 5. Detailed regression result can be found at [Table B.1](#table-b.1).
+``` {r ukhls_consum_building_mod, message = FALSE, echo = FALSE}
+vif(ukhls_consum_building_mod) %>% kable()
+```
+
+2. `energy ~ hhsize + income + employment + over65 + youngest + tenure + residency_length`  
+The **socio-demographic model**`r hasSignificance(lcf_consum_building_mod)` explained `r writePercent(glance(ukhls_consum_socio_mod)[[1]])`% (adjusted $R^2$ = `r writePercent(glance(ukhls_consum_socio_mod)[[2]])`%) of the variability in energy consumption, F(`r glance(ukhls_consum_socio_mod)[["df"]]`, `r glance(ukhls_consum_socio_mod)[["df.residual"]]`) = `r writeNum(glance(ukhls_consum_socio_mod)[["statistic"]])`, p = `r writePValue(glance(ukhls_consum_socio_mod)[["p.value"]])`. None of the variables have VIF higher than 5. Detailed regression result can be found at [Table B.2](#table-b.2).
+``` {r ukhls_consum_socio_mod, message = FALSE, echo = FALSE}
+vif(ukhls_consum_socio_mod) %>% kable()
+```
+
+3. `energy ~ ch`  
+The model of **heating pattern**`r hasSignificance(lcf_consum_building_mod)` explained `r writePercent(glance(ukhls_consum_heating_mod)[[1]])`% (adjusted $R^2$ = `r writePercent(glance(ukhls_consum_heating_mod)[[2]])`%) of the variability in energy consumption, F(`r glance(ukhls_consum_heating_mod)[["df"]]`, `r glance(ukhls_consum_heating_mod)[["df.residual"]]`) = `r writeNum(glance(ukhls_consum_heating_mod)[["statistic"]])`, p = `r writePValue(glance(ukhls_consum_heating_mod)[["p.value"]])`. It had just one predictor so needed not to check VIF.
+
+4. `energy ~ etariff`  
+The **attitudes** model`r hasSignificance(lcf_consum_building_mod)` explained  `r writePercent(glance(ukhls_consum_attitude_mod)[[1]])`% (adjusted $R^2$ = `r writePercent(glance(ukhls_consum_attitude_mod)[[2]])`%) of the variability in energy consumption, F(`r glance(ukhls_consum_attitude_mod)[["df"]]`, `r glance(ukhls_consum_attitude_mod)[["df.residual"]]`) = `r writeNum(glance(ukhls_consum_attitude_mod)[["statistic"]])`, p = `r writePValue(glance(ukhls_consum_attitude_mod)[["p.value"]])`. It had just one predictor so needed not to check VIF. This model did not seem to be a good fit for the data.
+
+#### Combined models
+1. `energy ~ gov + no_bedroom + no_otherrooms +  + elec + gas + oil + other_fuel + `  
+            `hhsize + income + employment + over65 + youngest + tenure + residency_length`    
+**Building + Socio-demographic**: The model`r hasSignificance(lcf_consum_building_mod)` explained `r writePercent(glance(ukhls_consum_building_socio_mod)[[1]])`% (adjusted $R^2$ = `r writePercent(glance(ukhls_consum_building_socio_mod)[[2]])`%) of the variability in energy consumption, F(`r glance(ukhls_consum_building_socio_mod)[["df"]]`, `r glance(ukhls_consum_building_socio_mod)[["df.residual"]]`) = `r writeNum(glance(ukhls_consum_building_socio_mod)[["statistic"]])`, p = `r writePValue(glance(ukhls_consum_building_socio_mod)[["p.value"]])`. An ANOVA showed that the difference in explanatory power between the model containing building variables only and that containing socio-demographic variables in addition was significant (p = `r writePValue(ukhls_consum_building_2_building_socio_aov$"Pr(>F)"[2])`) implying that inclusion of socio-demographic variables does increase the explanatory power of the model.
+
+2. `energy ~ gov + no_bedroom + no_otherrooms + elec + gas + oil + other_fuel + `  
+            `hhsize + income + employment + over65 + youngest + tenure + residency_length + `  
+            `ch`  
+**Building + Socio-demographic + Heating pattern**: The model`r hasSignificance(lcf_consum_building_mod)` explained `r writePercent(glance(ukhls_consum_building_socio_heating_mod)[[1]])`% (adjusted $R^2$ = `r writePercent(glance(ukhls_consum_building_socio_heating_mod)[[2]])`%) of the variability in energy consumption, F(`r glance(ukhls_consum_building_socio_heating_mod)[["df"]]`, `r glance(ukhls_consum_building_socio_heating_mod)[["df.residual"]]`) = `r writeNum(glance(ukhls_consum_building_socio_heating_mod)[["statistic"]])`, p = `r writePValue(glance(ukhls_consum_building_socio_heating_mod)[["p.value"]])`. This increase was signigicant (p = `r writePValue(ukhls_consum_building_socio_2_building_socio_heating_aov$"Pr(>F)"[2])`).
+
+3. `energy ~ gov + no_bedroom + no_otherrooms + elec + gas + oil + other_fuel + `  
+            `hhsize + income + employment + over65 + youngest + tenure + residency_length + `  
+            `ch + etariff`  
+**Building + Socio-demographic + Heating pattern + Attitude**: The model`r hasSignificance(lcf_consum_building_mod)` explained `r writePercent(glance(ukhls_consum_building_socio_heating_attitude_mod)[[1]])`% (adjusted $R^2$ = `r writePercent(glance(ukhls_consum_building_socio_heating_attitude_mod)[[2]])`%) of the variability in energy consumption, F(`r glance(ukhls_consum_building_socio_heating_attitude_mod)[["df"]]`, `r glance(ukhls_consum_building_socio_heating_attitude_mod)[["df.residual"]]`) = `r writeNum(glance(ukhls_consum_building_socio_heating_attitude_mod)[["statistic"]])`, p = `r writePValue(glance(ukhls_consum_building_socio_heating_attitude_mod)[["p.value"]])`. None of the VIF were higher than 5. This increase was significant (p = `r writePValue(ukhls_consum_building_socio_heating_2_building_socio_heating_attitude_aov$"Pr(>F)"[2])`). Detailed regression result can be found at [Table B.3](#table-b.3).
+``` {r ukhls_consum_building_socio_heating_attitude_mod, message = FALSE, warning = FALSE, echo = FALSE}
+vif(ukhls_consum_building_socio_heating_attitude_mod) %>% kable()
+```
+
+Fig. 2a shows the adjusted $R^2$ for the three individual models and Fig. 2b shows the adjusted $R^2$ for the combined models.
+``` {r ukhls_result, message = FALSE, echo = FALSE, fig.cap = "Fig 2. Adjusted $R^2$ (%) for the four models (a) and for the combined models (b)."}
+ukhls_adj_ind <- tibble(
+  models = factor(c("building","socio-demographic","heating pattern", "attitude")) %>% fct_inorder(), 
+  adj = c(glance(ukhls_consum_building_mod)[[2]], 
+              glance(ukhls_consum_socio_mod)[[2]], 
+              glance(ukhls_consum_heating_mod)[[2]],
+              glance(ukhls_consum_attitude_mod)[[2]]))
+plot1 <- ukhls_adj_ind %>% ggplot() + 
+  geom_bar(aes(x = models, y = adj, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("2a") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+ukhls_adj_comb <- tibble(
+  models = c("building","building_socio","building_socio_heating", "building_socio_heating_attitude"), 
+  adj = c(glance(ukhls_consum_building_mod)[[2]], 
+              glance(ukhls_consum_building_socio_mod)[[2]], 
+              glance(ukhls_consum_building_socio_heating_mod)[[2]],
+              glance(ukhls_consum_building_socio_heating_attitude_mod)[[2]]))
+plot2 <- ukhls_adj_comb %>% ggplot() + 
+  geom_bar(aes(x = models, y = adj, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("2b") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+We also included separated analysis for waves **a** and **d** (the only waves had etariff recorded).
+``` {r ukhls_result_a, message = FALSE, echo = FALSE, fig.cap = "Fig 3. Adjusted $R^2$ (%) for the four models (a) and for the combined models (b) for **wave a**."}
+ukhls_adj_ind <- tibble(
+  models = factor(c("building","socio-demographic","heating pattern", "attitude")) %>% fct_inorder(), 
+  adj = c(glance(ukhls_consum_building_mod_a)[[2]], 
+              glance(ukhls_consum_socio_mod_a)[[2]], 
+              glance(ukhls_consum_heating_mod_a)[[2]],
+              glance(ukhls_consum_attitude_mod_a)[[2]]))
+plot1 <- ukhls_adj_ind %>% ggplot() + 
+  geom_bar(aes(x = models, y = adj, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("3a") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+ukhls_adj_comb <- tibble(
+  models = c("building","building_socio","building_socio_heating", "building_socio_heating_attitude"), 
+  adj = c(glance(ukhls_consum_building_mod_a)[[2]], 
+              glance(ukhls_consum_building_socio_mod_a)[[2]], 
+              glance(ukhls_consum_building_socio_heating_mod_a)[[2]],
+              glance(ukhls_consum_building_socio_heating_attitude_mod_a)[[2]]))
+plot2 <- ukhls_adj_comb %>% ggplot() + 
+  geom_bar(aes(x = models, y = adj, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("3b") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+grid.arrange(plot1, plot2, ncol = 2)
+writeLines(paste(nrow(ukhls_consum_list[[1]]), "observations", collapse = " "))
+```
+
+``` {r ukhls_result_d, message = FALSE, echo = FALSE, fig.cap = "Fig 4. Adjusted $R^2$ (%) for the four models (a) and for the combined models (b) for **wave d**."}
+ukhls_adj_ind <- tibble(
+  models = factor(c("building","socio-demographic","heating pattern", "attitude")) %>% fct_inorder(), 
+  adj = c(glance(ukhls_consum_building_mod_d)[[2]], 
+              glance(ukhls_consum_socio_mod_d)[[2]], 
+              glance(ukhls_consum_heating_mod_d)[[2]],
+              glance(ukhls_consum_attitude_mod_d)[[2]]))
+plot1 <- ukhls_adj_ind %>% ggplot() + 
+  geom_bar(aes(x = models, y = adj, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("4a") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+ukhls_adj_comb <- tibble(
+  models = c("building","building_socio","building_socio_heating", "building_socio_heating_attitude"), 
+  adj = c(glance(ukhls_consum_building_mod_d)[[2]], 
+              glance(ukhls_consum_building_socio_mod_d)[[2]], 
+              glance(ukhls_consum_building_socio_heating_mod_d)[[2]],
+              glance(ukhls_consum_building_socio_heating_attitude_mod_d)[[2]]))
+plot2 <- ukhls_adj_comb %>% ggplot() + 
+  geom_bar(aes(x = models, y = adj, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("4b") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+grid.arrange(plot1, plot2, ncol = 2)
+writeLines(paste(nrow(ukhls_consum_list[[2]]), "observations", collapse = " "))
+```
+
+## Appendix
+
+##### Table A.1  
+Results of the OLS regression. Here and in all subsequent tables, B means unstandardised coefficient, β standardised coefficient. Combined model.
+``` {r table-a1, echo = FALSE}
+tribble(
+  ~Predictor,
+  "Dwelling Type (Ref = detached): Semi-Detached",
+  "Dwelling Type: Terrace",
+  "Dwelling Type: Maisonette",
+  "Dwelling Type: Others",
+  "Number Rooms",
+  "GOV (Ref = North East): North West and Merseyside",
+  "GOV: Yorkshire and the Humber",
+  "GOV: East Midlands",
+  "GOV: West Midlands ",
+  "GOV: Eastern",
+  "GOV: London",
+  "GOV: South East",
+  "GOV: South West",
+  "GOV: Wales",
+  "GOV: Scotland",
+  "GOV: Northern Ireland",
+  "Central Heating (Ref = elec): gas",
+  "Central Heating: oil",
+  "Central Heating: solid_fuel",
+  "Central Heating: solid_oil_fuel",
+  "Central Heating: calor_gas",
+  "Central Heating: other_gas",
+  "Central Heating: no_record",
+  "Household Size",
+  "Unemployed",
+  "Income",
+  "HRP Age",
+  "Residency Length",
+  "No Over 75",
+  "Youngest (Ref = No Dependent Children): 0-2 Years",
+  "Youngest: 2-5 Years",
+  "Youngest: 5-18 Years",
+  "HRP Sex (Ref = Male): Female",
+  "Tenure (Ref = Local authority rented unfurn): Housing association",
+  "Tenure: Other rented unfurnished",
+  "Tenure: Rented furnished",
+  "Tenure: Owned with mortgage",
+  "Tenure: Owned outright",
+  "Tenure: Rent free",
+  "Intercept"
+) %>% cbind(tidy.beta(lcf_consum_building_socio_mod)) %>%
+  rename(B = Estimate, β = Standardized, SE = `Std. Error`) %>% 
+  mutate(Predictor = predictor_add_stars(Predictor, `Pr(>|t|)`)) %>%
+  select(Predictor, B, SE, β) %>%
+  kable()
+```
+
+Signif.codes: \*\*\* 0.001, \*\* 0.01, * 0.05
+
+##### Table B.1  
+Results of the OLS regression. Building variables.
+``` {r table-b1, echo = FALSE}
+tribble(
+  ~Predictor,
+  "GOV (Ref = Missing): North East",
+  "GOV: North West",
+  "GOV: Yorkshire and the Humber",
+  "GOV: East Midlands",
+  "GOV: West Midlands ",
+  "GOV: East of England",
+  "GOV: London",
+  "GOV: South East",
+  "GOV: South West",
+  "GOV: Wales",
+  "GOV: Scotland",
+  "GOV: Northern Ireland",
+  "Number Bedrooms",
+  "Number Othe Rooms",
+  "Electricity",
+  "Gas",
+  "Oil",
+  "Other Fuel",
+  "Intercept"
+) %>% cbind(tidy.beta(ukhls_consum_building_mod)) %>%
+  rename(B = Estimate, β = Standardized, SE = `Std. Error`) %>% 
+  mutate(Predictor = predictor_add_stars(Predictor, `Pr(>|t|)`)) %>%
+  select(Predictor, B, SE, β) %>%
+  kable()
+```
+
+##### Table B.2  
+Results of the OLS regression. Socio-demorgraphic variables.
+``` {r table-b2, echo = FALSE}
+tribble(
+  ~Predictor,
+  "Household Size",
+  "Income",
+  "Employment",
+  "Any Over 65",
+  "Youngest (Ref = 0-4 Years): 11-15 Years",
+  "Youngest: 5-10 Years",
+  "Youngest: No Dependent Variable",
+  "Tenure (Ref = Missing): Owned Outright",
+  "Tenure: Owned With Mortgage",
+  "Tenure: Local Authority Rent",
+  "Tenure: Housing Assoc Rented",
+  "Tenure: Rented From Employer",
+  "Tenure: Rented Private Unfurnished",
+  "Residency Length",
+  "Intercept"
+) %>% cbind(tidy.beta(ukhls_consum_socio_mod)) %>%
+  rename(B = Estimate, β = Standardized, SE = `Std. Error`) %>% 
+  mutate(Predictor = predictor_add_stars(Predictor, `Pr(>|t|)`)) %>%
+  select(Predictor, B, SE, β) %>%
+  kable()
+```
+
+##### Table B.3  
+Results of the OLS regression. Combined model.
+``` {r table-b3, echo = FALSE}
+tribble(
+  ~Predictor,
+  "GOV (Ref = Missing): North East",
+  "GOV: North West",
+  "GOV: Yorkshire and the Humber",
+  "GOV: East Midlands",
+  "GOV: West Midlands ",
+  "GOV: East of England",
+  "GOV: London",
+  "GOV: South East",
+  "GOV: South West",
+  "GOV: Wales",
+  "GOV: Scotland",
+  "GOV: Northern Ireland",
+  "Number Bedrooms",
+  "Number Othe Rooms",
+  "Household Size",
+  "Income",
+  "Employment",
+  "Any Over 65",
+  "Youngest (Ref = 0-4 Years): 11-15 Years",
+  "Youngest: 5-10 Years",
+  "Youngest: No Dependent Variable",
+  "Tenure (Ref = Missing): Owned Outright",
+  "Tenure: Owned With Mortgage",
+  "Tenure: Local Authority Rent",
+  "Tenure: Housing Assoc Rented",
+  "Tenure: Rented From Employer",
+  "Tenure: Rented Private Unfurnished",
+  "Residency Length",
+  "Electricity",
+  "Gas",
+  "Oil",
+  "Other Fuel",
+  "Central Heating (Ref = Don't Know): Y",
+  "Central Heating: N",
+  "Etariff (Ref = Missing): Inapplicable",
+  "Etariff: Don't Know",
+  "Etariff: Yes - Already Buy",
+  "Etariff: Yes - Seriously Considering",
+  "Etariff: No - Neither",
+  "Etariff: Considered In The Past And Rejected",
+  "Intercept"
+) %>% cbind(tidy.beta(ukhls_consum_building_socio_heating_attitude_mod)) %>%
+  rename(B = Estimate, β = Standardized, SE = `Std. Error`) %>% 
+  mutate(Predictor = predictor_add_stars(Predictor, `Pr(>|t|)`)) %>%
+  select(Predictor, B, SE, β) %>%
+  kable()
+```

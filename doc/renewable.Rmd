@@ -1,0 +1,320 @@
+---
+title: Testing if the variables correlated to energy consumption in Huebner et al.\'s essay correlate with the installation of renewable energy
+author: "Yangguang Li"
+date: "06/07/2017"
+output:
+  html_document:
+    fig_caption: yes
+  html_notebook: default
+---
+``` {r load_libraries, message=FALSE, warning = FALSE}
+setwd("..")
+# Loading the environment
+library(ProjectTemplate)
+load.project()
+```
+```{r global_options, echo=FALSE}
+knitr::opts_chunk$set(fig.path="../graphs/")
+```
+The analyses were done on two data sets: Living Cost and Food Survey (LCF) and Understanding Society (UK Household Longitudinal Study, UKHLS).
+
+Since the dependent variables for both data sets were binary, we used logistic regression for fitting the models, and we used McFadden's pseudo $R^2 = 1 - \frac{ln(\hat{L}_M)}{ln(\hat{L}_0)}$ where $\hat{L}_M$ and $\hat{L}_0$ are likelihoods for the model being fitted and the null model for analysis.
+
+## Living Cost and Food Survey (LCF)
+
+### Data set
+The sample size was `r nrow(lcf_data)` and installation of renewable energy was available for `r nrow(lcf_renew)` households. **Since there were only `r nrow(lcf_renew %>% filter(renewable == TRUE))` positive responses amongst `r nrow(lcf_renew)` obserbations, the logistic models fitted did not converged or had fitted probabilities numerically 0 or 1 occurred, and casued the analysis not reliable.**
+
+The process of munging data can be found at [munge_data LCF](../munge/01-lcf-data.R).
+
+## Understanding Society (UK Household Longitudinal Study, UKHLS)
+
+### Data set
+After combining the six waves' data, the sample had `r nrow(ukhls_data)` observations in total and `r nrow(ukhls_data %>% filter(solar_elec > 0 | solar_heating > 0 | wind_tur > 0))` had reported the installation of renewable energy. Among the `r nrow(ukhls_data %>% filter(solar_elec > 0 | solar_heating > 0 | wind_tur > 0))` households, `r nrow(ukhls_data %>% filter(solar_elec > 0 | solar_heating > 0 | wind_tur > 0)) - nrow(ukhls_renew)` were excluded (`r nrow(ukhls_renew)` left) as they were too extreme in the number of bedrooms and other rooms or had missed value in some variables.
+
+We had all the 4 categories in the Huebner et al.'s essay in this data set: building characteristics, socio-demographics, heating pattern, and attitudes toward climate change, energy-saving actions (all the variables below have been removed the prefix 'x_').
+
+1. Dependent variable: solar1 (install solar panels for electricity), solar2 (install solar water heating), and solar3 (install wind turbine to generate electricity) are grouped into single variable **renewable** which is TRUE if any of them was answered yes.
+
+2. Building characteristics  
+The gor_dv (government office region), hsbeds (number of bedrooms), and hsrooms(number of other rooms) are the variables in this data set could be found to represent the building characteristics. And fuelhave1 (electricity), fuelhave2 (gas), fuelhave3 (oil), fuelhave4 (other fuel) are included.  
+
+3. Socio-demographic  
+The hhsize (household size), fihhmngrs_dv (income), nemp_dvn (number of people who was employed), npens_dv (number of people who is over pensionable age), agechy_dv (age of the youngest child), tenure_dv (tenure type), and hsyrbuy (the year became owner) were chosen for the analysis.
+
+4. Heating pattern  
+Variable heatch (central heating) was in this group.
+
+5. Attitudes  
+The etariff (considering green tariff, only available in waves a and d) was the only thing we found to represent household's attitude.
+
+#### Munging
+To have a better representation of the data, the following changes had been made:
+``` {r ukhls_variables, echo = FALSE}
+tribble(
+  ~Former, ~Transformed, ~Categories,
+  "solar1, solar2, and solar3", "renewable", writeCategories(ukhls_renew %>% count(renewable)),
+  "solar1", "solar_elec", writeCategories(ukhls_renew %>% count(solar_elec)),
+  "solar2", "solar_heating", writeCategories(ukhls_renew %>% count(solar_heating)),
+  "solar3", "wind_tur", writeCategories(ukhls_renew %>% count(wind_tur)),
+  "gor_dv", "gov", writeCategories(ukhls_renew %>% count(gov)),
+  "hsbeds", "no_bedroom", writeContinuous(ukhls_renew$no_bedroom),
+  "hsrooms", "no_otherrooms", writeContinuous(ukhls_renew$no_otherrooms),
+  "fuelhave1", "elec", writeCategories(ukhls_renew %>% count(elec)),
+  "fuelhave2", "gas", writeCategories(ukhls_renew %>% count(gas)),
+  "fuelhave3", "oil", writeCategories(ukhls_renew %>% count(oil)),
+  "fuelhave4", "other_fuel", writeCategories(ukhls_renew %>% count(other_fuel)),
+  "hhsize", "hhsize", writeContinuous(ukhls_renew$hhsize),
+  "fihhmngrs_dv", "income (£/mo)", writeContinuous(ukhls_renew$income), 
+  "nemp_dv", "employment (people)", writeCategories(ukhls_renew %>% count(employment)),
+  "npens_dv", "over65", writeCategories(ukhls_renew %>% count(over65)),
+  "agechy_dv", "youngest", writeCategories(ukhls_renew %>% count(youngest)),
+  "tenure_dv", "tenure", writeCategories(ukhls_renew %>% count(tenure)),
+  "hsyrbuy", "residency_length (years)", writeContinuous(ukhls_renew$residency_length),
+  "heatch", "ch", writeCategories(ukhls_renew %>% count(ch)),
+  "", "etariff", writeCategories(ukhls_renew %>% count(etariff))
+) %>% mutate(Categories = as.character(Categories)) %>% kable()
+```
+
+The process of munging data can be found at [munge_data UKHLS](../munge/05-ukhls-data.R).
+``` {r ukhls_hh, echo = FALSE}
+ukhls_renew %>% head(5) %>% select(hidp:hhsize) %>% kable()
+ukhls_renew %>% head(5) %>% select(hidp,income:etariff) %>% kable()
+```
+
+### Correlation Analysis
+Now we are going to check if the variables examined in the essay by Huebner et al., 2015 are correlated with the installation of renewable energy in this data set.  
+
+Firstly the logistic regression was performed separately for the four classes of variables as presented above. Then we checked for the colinearity issue by inspecing the variance-inflation factors (VIF), and any variables give VIF higher than 5 leaded to Lasso regression being employed.
+
+The process of analysing can be found at [analysis_renew UKHLS](../munge/07-ukhls-renewable.R).
+
+#### Individual models
+1. `renewable ~ gov + no_bedroom + no_otherrooms + elec + gas + oil + other_fuel`  
+The logistic regression model fitted for all **building variables**`r hasSignificance(ukhls_renew_building_mod)` had pseudo $R^2$ of `r writeNum(analysis_Logit(ukhls_renew_building_mod)[[1]])` and p = `r writePValue(analysis_Logit(ukhls_renew_building_mod)[[2]])`. None of the VIF was greater than 5.
+``` {r ukhls_renew_building_mod, echo = FALSE}
+vif(ukhls_renew_building_mod) %>% kable()
+```
+
+2. `renewable ~ hhsize + income + employment + over65 + youngest + tenure + residency_length`  
+The logistic regression model fitted for all **socio-demorgraphic variables**`r hasSignificance(ukhls_renew_socio_mod)` had pseudo $R^2$ of `r writeNum(analysis_Logit(ukhls_renew_socio_mod)[[1]])` and p = `r writePValue(analysis_Logit(ukhls_renew_socio_mod)[[2]])`. None of the VIF was greater than 5.
+``` {r ukhls_renew_socio_mod, echo = FALSE}
+vif(ukhls_renew_socio_mod) %>% kable()
+```
+
+3. `renewable ~ ch`  
+The logistic regression model of **heating pattern**`r hasSignificance(ukhls_renew_heating_mod)` had pseudo $R^2$ of `r writeNum(analysis_Logit(ukhls_renew_heating_mod)[[1]])` and p = `r writePValue(analysis_Logit(ukhls_renew_heating_mod)[[2]])`. It had just one predictor so needed not to check VIF.
+
+4. `renewable ~ etariff`  
+The logistic regression model of **attitudes**`r hasSignificance(ukhls_renew_attitude_mod)` had pseudo $R^2$ of `r writeNum(analysis_Logit(ukhls_renew_attitude_mod)[[1]])` and p = `r writePValue(analysis_Logit(ukhls_renew_attitude_mod)[[2]])`. It had just one predictor so needed not to check VIF.
+
+#### Combined models
+1. `renewable ~ gov + no_bedroom + no_otherrooms + elec + gas + oil + other_fuel + `  
+              `hhsize + income + employment + over65 + youngest + tenure + residency_length`  
+**Building + Socio-demorgraphic**: The model`r hasSignificance(ukhls_renew_building_socio_mod)` had pseudo $R^2$ of `r writeNum(analysis_Logit(ukhls_renew_building_socio_mod)[[1]])` and p = `r writePValue(analysis_Logit(ukhls_renew_building_socio_mod)[[2]])`.  
+An ANOVA showed that the difference in explanatory power between the model containing building variables only and that containing socio-demographic variables in addition was significant (p = `r pOfDifference(ukhls_renew_building_mod, ukhls_renew_building_socio_mod)`) implying that inclusion of socio-demographic variables does affect the explanatory power of the model.  
+None of the variables had VIF higher than 5.
+
+2. `renewable ~ gov + no_bedroom + no_otherrooms + elec + gas + oil + other_fuel + `  
+              `hhsize + income + employment + over65 + youngest + tenure + residency_length + `  
+              `ch`  
+**Building + Socio-demorgraphic + Heating pattern**: The model`r hasSignificance(ukhls_renew_building_socio_heating_mod)` had pseudo $R^2$ of `r writeNum(analysis_Logit(ukhls_renew_building_socio_heating_mod)[[1]])` and p = `r writePValue(analysis_Logit(ukhls_renew_building_socio_heating_mod)[[2]])`. The increse was not significant (p = `r pOfDifference(ukhls_renew_building_socio_mod, ukhls_renew_building_socio_heating_mod)`). 
+None of the variables had VIF higher than 5.
+
+3. `renewable ~ gov + no_bedroom + no_otherrooms + elec + gas + oil + other_fuel + `  
+              `hhsize + income + employment + over65 + youngest + tenure + residency_length + `  
+              `ch + etariff`  
+**Building + Socio-demorgraphic + Heating pattern + Attitude**: The model`r hasSignificance(ukhls_renew_building_socio_heating_attitude_mod)` had pseudo $R^2$ of `r writeNum(analysis_Logit(ukhls_renew_building_socio_heating_attitude_mod)[[1]])` and p = `r writePValue(analysis_Logit(ukhls_renew_building_socio_heating_attitude_mod)[[2]])`. The increase was significant (p = `r pOfDifference(ukhls_renew_building_socio_heating_mod, ukhls_renew_building_socio_heating_attitude_mod)`). One of the variables, __elec__, had VIF higher than 5, which made the grouped Lasso regression necessary. Detailed regression results can be found at [Table A](#table-a).
+``` {r ukhls_renew_building_socio_heating_attitude_mod, echo = FALSE}
+vif(ukhls_renew_building_socio_heating_attitude_mod) %>% kable()
+```
+
+###### Refitted model  
+`renewable ~ no_bedroom + no_otherrooms + elec + gas + oil + other_fuel + `  
+                                ` income + employment + over65 + tenure + residency_length + `  
+                                ` etariff`  
+We then refitted the model without those variables. The model`r hasSignificance(ukhls_renew_all_fit_mod)` had pseudo $R^2$ of `r writeNum(analysis_Logit(ukhls_renew_all_fit_mod)[[1]])` and p = `r writePValue(analysis_Logit(ukhls_renew_all_fit_mod)[[2]])`.
+
+Fig. 2a shows the $R^2$ for the four individual models and Fig. 2b shows the $R^2$ for the combined models.
+``` {r ukhls_result, message = FALSE, echo = FALSE, fig.cap = "Fig 2. $R^2$ for the four models (a) and for the combined models (b)."}
+ukhls_ind <- tibble(
+  models = factor(c("building","socio-demographic","heating pattern", "attitude")) %>% fct_inorder(), 
+  pseudo.r.squared = c(analysis_Logit(ukhls_renew_building_mod)[[1]], 
+            analysis_Logit(ukhls_renew_socio_mod)[[1]],
+            analysis_Logit(ukhls_renew_heating_mod)[[1]],
+            analysis_Logit(ukhls_renew_attitude_mod)[[1]]))
+plot1 <- ukhls_ind %>% ggplot() + 
+  geom_bar(aes(x = models, y = pseudo.r.squared, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("2a") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+ukhls_comb <- tibble(
+  models = c("building","building_socio","building_socio_heating", "building_socio_heating_attitude"), 
+  pseudo.r.squared = c(analysis_Logit(ukhls_renew_building_mod)[[1]], 
+            analysis_Logit(ukhls_renew_building_socio_mod)[[1]],
+            analysis_Logit(ukhls_renew_building_socio_heating_mod)[[1]],
+            analysis_Logit(ukhls_renew_building_socio_heating_attitude_mod)[[1]]))
+plot2 <- ukhls_comb %>% ggplot() + 
+  geom_bar(aes(x = models, y = pseudo.r.squared, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("2b") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+##### For each renewable energy type
+We also included analyses for the two variables of renewbale energy: solar electricity and solar heating beneath.
+``` {r ukhls_solar-elec_result, message = FALSE, echo = FALSE, fig.cap = "Fig 3. $R^2$ for the four models (a) and for the combined models (b) for **solar electricity**."}
+ukhls_ind <- tibble(
+  models = factor(c("building","socio-demographic","heating pattern", "attitude")) %>% fct_inorder(), 
+  pseudo.r.squared = c(analysis_Logit(ukhls_solar_elec_building_mod)[[1]], 
+            analysis_Logit(ukhls_solar_elec_socio_mod)[[1]],
+            analysis_Logit(ukhls_solar_elec_heating_mod)[[1]],
+            analysis_Logit(ukhls_solar_elec_attitude_mod)[[1]]))
+plot1 <- ukhls_ind %>% ggplot() + 
+  geom_bar(aes(x = models, y = pseudo.r.squared, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("3a") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+ukhls_comb <- tibble(
+  models = c("building","building_socio","building_socio_heating", "building_socio_heating_attitude"), 
+  pseudo.r.squared = c(analysis_Logit(ukhls_solar_elec_building_mod)[[1]], 
+            analysis_Logit(ukhls_solar_elec_building_socio_mod)[[1]],
+            analysis_Logit(ukhls_solar_elec_building_socio_heating_mod)[[1]],
+            analysis_Logit(ukhls_solar_elec_building_socio_heating_attitude_mod)[[1]]))
+plot2 <- ukhls_comb %>% ggplot() + 
+  geom_bar(aes(x = models, y = pseudo.r.squared, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("3b") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+``` {r ukhls_solar_heating_result, message = FALSE, echo = FALSE, fig.cap = "Fig 4. $R^2$ for the four models (a) and for the combined models (b) for **solar heating**."}
+ukhls_ind <- tibble(
+  models = factor(c("building","socio-demographic","heating pattern", "attitude")) %>% fct_inorder(), 
+  pseudo.r.squared = c(analysis_Logit(ukhls_solar_heating_building_mod)[[1]], 
+            analysis_Logit(ukhls_solar_heating_socio_mod)[[1]],
+            analysis_Logit(ukhls_solar_heating_heating_mod)[[1]],
+            analysis_Logit(ukhls_solar_heating_attitude_mod)[[1]]))
+plot1 <- ukhls_ind %>% ggplot() + 
+  geom_bar(aes(x = models, y = pseudo.r.squared, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("4a") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+ukhls_comb <- tibble(
+  models = c("building","building_socio","building_socio_heating", "building_socio_heating_attitude"), 
+  pseudo.r.squared = c(analysis_Logit(ukhls_solar_heating_building_mod)[[1]], 
+            analysis_Logit(ukhls_solar_heating_building_socio_mod)[[1]],
+            analysis_Logit(ukhls_solar_heating_building_socio_heating_mod)[[1]],
+            analysis_Logit(ukhls_solar_heating_building_socio_heating_attitude_mod)[[1]]))
+plot2 <- ukhls_comb %>% ggplot() + 
+  geom_bar(aes(x = models, y = pseudo.r.squared, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("4b") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+Analysis for **wind_tur** did not displayed, as there were only `r ukhls_renew %>% count(wind_tur) %>% filter(wind_tur == TRUE) %>% .[2]` amongst `r nrow(ukhls_renew)` observations, which made the models not converging.
+
+##### For wave a and d
+We included separated analysis for waves **a** and **d**.
+``` {r ukhls_result_a, message = FALSE, echo = FALSE, fig.cap = "Fig 5. $R^2$ for the four models (a) and for the combined models (b) for **wave a**."}
+ukhls_ind <- tibble(
+  models = factor(c("building","socio-demographic","heating pattern", "attitude")) %>% fct_inorder(), 
+  pseudo.r.squared = c(analysis_Logit(ukhls_renew_building_mod_a)[[1]], 
+            analysis_Logit(ukhls_renew_socio_mod_a)[[1]],
+            analysis_Logit(ukhls_renew_heating_mod_a)[[1]],
+            analysis_Logit(ukhls_renew_attitude_mod_a)[[1]]))
+plot1 <- ukhls_ind %>% ggplot() + 
+  geom_bar(aes(x = models, y = pseudo.r.squared, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("5a") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+ukhls_comb <- tibble(
+  models = c("building","building_socio","building_socio_heating", "building_socio_heating_attitude"), 
+  pseudo.r.squared = c(analysis_Logit(ukhls_renew_building_mod_a)[[1]], 
+            analysis_Logit(ukhls_renew_building_socio_mod_a)[[1]],
+            analysis_Logit(ukhls_renew_building_socio_heating_mod_a)[[1]],
+            analysis_Logit(ukhls_renew_building_socio_heating_attitude_mod_a)[[1]]))
+plot2 <- ukhls_comb %>% ggplot() + 
+  geom_bar(aes(x = models, y = pseudo.r.squared, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("5b") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+grid.arrange(plot1, plot2, ncol = 2)
+writeLines(paste(nrow(ukhls_renew_list[[1]]), "observations", collapse = " "))
+```
+
+``` {r ukhls_result_d, message = FALSE, echo = FALSE, fig.cap = "Fig 6. $R^2$ for the four models (a) and for the combined models (b) for **wave d**."}
+ukhls_ind <- tibble(
+  models = factor(c("building","socio-demographic","heating pattern", "attitude")) %>% fct_inorder(), 
+  pseudo.r.squared = c(analysis_Logit(ukhls_renew_building_mod_d)[[1]], 
+            analysis_Logit(ukhls_renew_socio_mod_d)[[1]],
+            analysis_Logit(ukhls_renew_heating_mod_d)[[1]],
+            analysis_Logit(ukhls_renew_attitude_mod_d)[[1]]))
+plot1 <- ukhls_ind %>% ggplot() + 
+  geom_bar(aes(x = models, y = pseudo.r.squared, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("6a") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+ukhls_comb <- tibble(
+  models = c("building","building_socio","building_socio_heating", "building_socio_heating_attitude"), 
+  pseudo.r.squared = c(analysis_Logit(ukhls_renew_building_mod_d)[[1]], 
+            analysis_Logit(ukhls_renew_building_socio_mod_d)[[1]],
+            analysis_Logit(ukhls_renew_building_socio_heating_mod_d)[[1]],
+            analysis_Logit(ukhls_renew_building_socio_heating_attitude_mod_d)[[1]]))
+plot2 <- ukhls_comb %>% ggplot() + 
+  geom_bar(aes(x = models, y = pseudo.r.squared, fill= models), stat="identity", show.legend = FALSE) +
+  ggtitle("6b") + theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+grid.arrange(plot1, plot2, ncol = 2)
+writeLines(paste(nrow(ukhls_renew_list[[2]]), "observations", collapse = " "))
+```
+
+## Appendix
+
+##### Table A  
+Results of the Lasso regression and the logistic regression. Here in the table, B means logistic regression coefficient, β the Lasso regression coefficient where NA indicates predictors set to zero in the Lasso regression. Combined model.
+``` {r table-a, echo = FALSE}
+tribble(
+  ~Predictor,
+  "GOV (Ref = Missing): North East",
+  "GOV: North West",
+  "GOV: Yorkshire and the Humber",
+  "GOV: East Midlands",
+  "GOV: West Midlands ",
+  "GOV: East of England",
+  "GOV: London",
+  "GOV: South East",
+  "GOV: South West",
+  "GOV: Wales",
+  "GOV: Scotland",
+  "GOV: Northern Ireland",
+  "Number Bedrooms",
+  "Number Othe Rooms",
+  "Electricity",
+  "Gas",
+  "Oil",
+  "Other Fuel",
+  "Household Size",
+  "Income",
+  "Employment",
+  "Any Over 65",
+  "Youngest (Ref = 0-4 Years): 11-15 Years",
+  "Youngest: 5-10 Years",
+  "Youngest: No Dependent Variable",
+  "Tenure (Ref = Missing): Owned With Mortgage",
+  "Tenure: Housing Assoc Rented",
+  "Tenure: Rented Private Unfurnished",
+  "Residency Length",
+  "Central Heating (Ref = Don't Know): Y",
+  "Central Heating: N",
+  "Etariff (Ref = Missing): Don't Know",
+  "Etariff: Yes - Already Buy",
+  "Etariff: Yes - Seriously Considering",
+  "Etariff: No - Neither",
+  "Etariff: Considered In The Past And Rejected",
+  "Intercept"
+) %>% cbind(getLassoResult(ukhls_renew_all_fit, X_ukhls, 1) %>% .[,2] %>% rbind(c(0)), 
+            tidy(ukhls_renew_building_socio_heating_attitude_mod)) %>%
+  rename(B = estimate, SE = std.error, z = statistic, `P(>|z|)` = p.value, β = coefficient) %>% 
+  mutate(Predictor = predictor_add_stars(Predictor, `P(>|z|)`)) %>%
+  mutate(β = ifelse(β == 0, NA, β)) %>%
+  select(-term) %>%
+  kable()
+```
+
+Signif.codes: \*\*\* 0.001, \*\* 0.01, * 0.05

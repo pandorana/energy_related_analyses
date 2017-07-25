@@ -1,0 +1,256 @@
+---
+title: Using clusting analysis to see how well the predictors in the previous analyses can help to predict energy related decisions
+author: "Yangguang Li"
+date: "19/07/2017"
+output:
+  html_document:
+    fig_caption: yes
+  html_notebook: default
+---
+``` {r load_libraries, message=FALSE, warning = FALSE}
+setwd("..")
+# Loading the environment
+library(ProjectTemplate)
+load.project()
+```
+```{r global_options, echo=FALSE}
+knitr::opts_chunk$set(fig.path="../graphs/")
+```
+The analyses were done on two data sets: Living Cost and Food Survey (LCF) and Understanding Society (UK Household Longitudinal Study, UKHLS). 
+
+Kmeans clustering was exploited for analysis. Also Spearman's rank correlation coefficient was uesd to calculate the correlation between clusters and predictors, or clusters and dependent variables, with appropriate banding used for continuous variables. The script of clustering analysis can be found at [clustering_analysis](../munge/09-clustering.R).
+
+## Living Cost and Food Survey (LCF)
+
+### Data Set
+Since we did not do analysis for installation of renewable energy and finding proxies for LCF, we just used the data set for analysing the energy consumption which had `r nrow(lcf_consum)` observations.
+
+The process of munging data can be found at [munge_data LCF](../munge/01-lcf-data.R).
+
+### Clustering Analysis - Energy Consumption
+We first did clustering on the **fuel_consum** of the data set. Using [F-ratio index (page 10)](https://studentnet.cs.manchester.ac.uk/ugt/COMP24111/materials/slides/Cluster-Validation.pdf#page=10), we found the 'optimal' number of clusters was 5, with F-ratio index `r fratio_index(lcf_cluster)`.  
+``` {r lcf_fratios, echo = FALSE}
+plot_FRatio_4_nclusters(lcf_clusters)
+```
+
+We then reordered them by the the mean of energy consumption for each group increasing. Details for each group is in [Table A1](#table-a1). Then we test the associations between clusters and all predictors and the significances of associations are included. **Income**, **hrp_age**, and **residency_length** were banded for 20% each group for this testing.  
+``` {r lcf_cluster_cor, echo = FALSE}
+tibble(Predictor = predictor_add_stars(lcf_correlation_r %>% names(),lcf_correlation_p), Correlation = lcf_correlation_r, p = lcf_correlation_p) %>% arrange(desc(Correlation)) %>% kable()
+```
+
+Signif.codes: \*\*\* 0.001, \*\* 0.01, * 0.05  
+
+Only **hrp_age** was weakly associated with clusters, and all others did not.  
+``` {r lcf_cluster_plot, echo = FALSE}
+lcf_consum_c %>% ggplot(aes(cluster, hrp_age)) + geom_bin2d()
+```
+
+### Clustering Analysis - Other variables
+We then did clustering on the all other variables apart from fuel_consum of the data set. Using F-ratio index, we found the 'optimal' number of clusters was 9, with F-ratio index `r fratio_index(lcf_cluster_other)`.  
+``` {r lcf_fratios_other, echo = FALSE}
+plot_FRatio_4_nclusters(lcf_clusters_other)
+```
+
+We then reordered them by the the mean of energy consumption for each group increasing. Details for each group is in [Table A2](#table-a2). Then we test the associations between clusters and the energy consumption which was banded 20% for each group, the result was Spearman's Rho being `r lcf_correlation_r_other` and p = `r writePValue(lcf_correlation_p_other)`.  
+``` {r lcf_cluster_cor_other, echo = FALSE}
+lcf_consum_c_other %>% ggplot(aes(cluster, fuel_consum)) + geom_boxplot()
+```
+
+## Understanding Society (UK Household Longitudinal Study, UKHLS)
+
+### Data set
+We combined the data sets for analysis of installation of renewable energy and finding proxies for UKHLS, and excluded those observations that happened to be only in one of the data set. This left us `r nrow(ukhls_predict)` observations to deal with.
+
+The process of munging data can be found at [munge_data UKHLS](../munge/05-ukhls-data.R).
+
+### Clustering Analysis - Energy Consumption
+We first did clustering on the **energy**, **renewable**, **solar electricity**, **solar heating**, and **wind turbine** variables of the data set. Using F-ratio index again, we found the 'optimal' number of clusters was also 5, with F-ratio index `r fratio_index(ukhls_cluster)`.  
+```{r ukhls_fratio, echo = FALSE}
+plot_FRatio_4_nclusters(ukhls_clusters)
+```
+
+Then reordered them by the the mean of each group increasing. Details for each group is in [Table B1](#table-b1). Then we test the associations between clusters and all predictors and the significances of associations are included. **elec_amount**, **gas_amount**, **Income**, and **residency_length** were banded for 20% each group for this testing again.  
+``` {r ukhls_cluster_cor, echo = FALSE}
+tibble(Predictor = predictor_add_stars(ukhls_correlation_r %>% names(),ukhls_correlation_p), Correlation = ukhls_correlation_r, p = ukhls_correlation_p) %>% arrange(desc(Correlation)) %>% kable()
+```
+
+Signif.codes: \*\*\* 0.001, \*\* 0.01, * 0.05  
+
+Predictor **number of bedrooms** was moderately, and electricity amount, household size, number of other rooms, gas amount, dish washer, oil, tumble dryer, and residency length were weakly, associated with the clusters, while all others did not. The association between wind_tur and clusters could not be computed as there was only one response, FALSE, for it in this data set.  
+``` {r ukhls_cluster_plot, echo = FALSE}
+ukhls_predict_c %>% ggplot(aes(cluster, no_bedroom)) + geom_boxplot()
+ukhls_predict_c %>% ggplot(aes(cluster, elec_amount)) + geom_bin2d()
+ukhls_predict_c %>% ggplot(aes(cluster, hhsize)) + geom_boxplot()
+ukhls_predict_c %>% ggplot(aes(cluster, no_otherrooms)) + geom_boxplot()
+ukhls_predict_c %>% ggplot(aes(cluster, gas_amount)) + geom_bin2d()
+ukhls_predict_c %>% ggplot(aes(cluster, dish_washer)) + geom_bin2d()
+ukhls_predict_c %>% ggplot(aes(cluster, oil)) + geom_bin2d()
+ukhls_predict_c %>% ggplot(aes(cluster, tumble_dryer)) + geom_bin2d()
+ukhls_predict_c %>% ggplot(aes(cluster, residency_length)) + geom_bin2d()
+```
+
+### Clustering Analysis - Other variables
+We did clustering on the other variables apart from **energy**, **renewable**, **solar electricity**, **solar heating**, and **wind turbine** variables of the data set. Using F-ratio index again, we found the 'optimal' number of clusters was also 6, with F-ratio index `r fratio_index(ukhls_cluster_other)`.  
+```{r ukhls_fratio_other, echo = FALSE}
+plot_FRatio_4_nclusters(ukhls_clusters_other)
+```
+
+Then reordered them by the the mean of each group increasing. Details for each group is in [Table B2](#table-b2). Then we test the associations between clusters and **energy**, **solar electricity**, **solar heating**, and **wind turbine** with the significance also given (energy was banded for 20% per group).  
+``` {r ukhls_cluster_cor_other, echo = FALSE}
+tibble(Responses = predictor_add_stars(ukhls_correlation_r_other %>% names(),ukhls_correlation_p_other), Correlation = ukhls_correlation_r_other, p = ukhls_correlation_p_other) %>% arrange(desc(Correlation)) %>% kable()
+```
+
+Signif.codes: \*\*\* 0.001, \*\* 0.01, * 0.05  
+
+None of the repsonse variables were related with the clusters.
+
+## Appendix
+##### Table A1
+```{r lcf_cluster, echo = FALSE}
+temp <- tribble(
+  ~Former, ~Transformed, 
+  "p117t", "fuel_consum (£/wk)", 
+  "a116", "dwelling_type", 
+  "a114p", "no_rooms", 
+  "gorx", "gov", 
+  "a150 - a156", "ch_type", 
+  "a049", "hh_size", 
+  "incanon", "income (£/wk)", 
+  "p396p", "hrp_age", 
+  "sexhrp", "hrp_sex", 
+  "a040 - a042", "youngest", 
+  "a121", "tenure", 
+  "p304", "unemployed", 
+  "a131", "residency_length (years)", 
+  "a070p", "over75" 
+)
+add_temp <- function(temp, a, b, data) {
+  for(i in a:b) {
+    temp <- temp %>% cbind(list(c(
+      writeContinuous(data %>% filter(cluster == i) %>% .$fuel_consum),
+      writeCategories(data %>% filter(cluster == i) %>% count(dwelling_type)), 
+      writeContinuous(data %>% filter(cluster == i) %>% .$no_rooms),
+      writeCategories(data %>% filter(cluster == i) %>% count(gov)), 
+      writeCategories(data %>% filter(cluster == i) %>% count(ch_type)),
+      writeContinuous(data %>% filter(cluster == i) %>% .$hh_size),
+      writeCategories(data %>% filter(cluster == i) %>% count(income)), 
+      writeCategories(data %>% filter(cluster == i) %>% count(hrp_age)), 
+      writeCategories(data %>% filter(cluster == i) %>% count(hrp_sex)), 
+      writeCategories(data %>% filter(cluster == i) %>% count(youngest)), 
+      writeCategories(data %>% filter(cluster == i) %>% count(tenure)), 
+      writeCategories(data %>% filter(cluster == i) %>% count(unemployed)), 
+      writeCategories(data %>% filter(cluster == i) %>% count(residency_length)), 
+      writeCategories(data %>% filter(cluster == i) %>% count(over75))
+    )) %>% set_names(c(paste("Cluster", i, collapse = " "))))
+  }
+  return(temp)
+}
+add_temp(temp, 1, length(unique(lcf_consum_c$cluster)), lcf_consum_c) %>% kable()
+```
+
+##### Table A2
+```{r lcf_cluster_other, echo = FALSE}
+add_temp(temp, 1, 5, lcf_consum_c_other) %>% kable()
+add_temp(temp, 6, length(unique(lcf_consum_c_other$cluster)), lcf_consum_c_other) %>% kable()
+```
+
+##### Table B1
+```{r ukhls_cluster, echo = FALSE}
+ temp <- tribble(
+  ~Former, ~Transformed,
+  "xpduely, xpelecy, xpgasy, xpoily, and xpsfly", "energy (£/yr)", 
+  "solar1, solar2, solar3", "renewable",
+  "solar1", "solar_elec",
+  "solar2", "solar_heating",
+  "solar3", "wind_tur",
+  "gor_dv", "gov", 
+  "hsbeds", "no_bedroom", 
+  "hsrooms", "no_otherrooms", 
+  "fuelhave1", "elec", 
+  "fuelhave2", "gas",
+  "fuelhave3", "oil",
+  "fuelhave4", "other_fuel",
+  "hhsize", "hhsize",
+  "fihhmngrs_dv", "income (£/mo)", 
+  "nemp_dv", "employment (people)",
+  "npens_dv", "over65",
+  "agechy_dv", "youngest",
+  "tenure_dv", "tenure",
+  "hsyrbuy", "residency_length (years)",
+  "heatch", "ch",
+  "", "etariff",
+  "cduse1", "color_tv",
+  "cduse2", "video_recorder or dvd_player",
+  "cduse3", "satellite_dish or sky_tv",
+  "cduse4", "cable_tv",
+  "cduse5", "fridge_freezer",
+  "cduse6", "washing_machine",
+  "cduse7", "tumble_dryer",
+  "cduse8", "dish_washer",
+  "cduse9", "microwave",
+  "cduse10", "pc",
+  "cduse11", "disc_player",
+  "cduse12", "telephone",
+  "cduse13", "mobile",
+  "fuelduel", "separate or combined_bills",
+  "duelpay", "payment_method",
+  "xpelecy", "elec_amount (£/yr)",
+  "elecpay", "elec_pay_method",
+  "xpgasy", "gas_amount (£/yr)",
+  "gaspay", "gas_pay_method"
+)
+add_temp <- function(temp, a, b, data) {
+  for (i in a:b) {
+    temp <- temp %>% cbind(list(c(
+      writeContinuous(data %>% filter(cluster == i) %>% .$energy),
+      writeCategories(data %>% filter(cluster == i) %>% count(renewable)),
+      writeCategories(data %>% filter(cluster == i) %>% count(solar_elec)),
+      writeCategories(data %>% filter(cluster == i) %>% count(solar_heating)),
+      writeCategories(data %>% filter(cluster == i) %>% count(wind_tur)),
+      writeCategories(data %>% filter(cluster == i) %>% count(gov)),
+      writeContinuous(data %>% filter(cluster == i) %>% .$no_bedroom),
+      writeContinuous(data %>% filter(cluster == i) %>% .$no_otherrooms),
+      writeCategories(data %>% filter(cluster == i) %>% count(elec)),
+      writeCategories(data %>% filter(cluster == i) %>% count(gas)),
+      writeCategories(data %>% filter(cluster == i) %>% count(oil)),
+      writeCategories(data %>% filter(cluster == i) %>% count(other_fuel)),
+      writeContinuous(data %>% filter(cluster == i) %>% .$hhsize),
+      writeCategories(data %>% filter(cluster == i) %>% count(income)), 
+      writeCategories(data %>% filter(cluster == i) %>% count(employment)),
+      writeCategories(data %>% filter(cluster == i) %>% count(over65)),
+      writeCategories(data %>% filter(cluster == i) %>% count(youngest)),
+      writeCategories(data %>% filter(cluster == i) %>% count(tenure)),
+      writeCategories(data %>% filter(cluster == i) %>% count(residency_length)),
+      writeCategories(data %>% filter(cluster == i) %>% count(ch)),
+      writeCategories(data %>% filter(cluster == i) %>% count(etariff)),
+      writeCategories(data %>% filter(cluster == i) %>% count(color_tv)),
+      writeCategories(data %>% filter(cluster == i) %>% count(video_recorder_or_dvd_player)),
+      writeCategories(data %>% filter(cluster == i) %>% count(satellite_dish_or_sky_tv)),
+      writeCategories(data %>% filter(cluster == i) %>% count(cable_tv)),
+      writeCategories(data %>% filter(cluster == i) %>% count(fridge_freezer)),
+      writeCategories(data %>% filter(cluster == i) %>% count(washing_machine)),
+      writeCategories(data %>% filter(cluster == i) %>% count(tumble_dryer)),
+      writeCategories(data %>% filter(cluster == i) %>% count(dish_washer)),
+      writeCategories(data %>% filter(cluster == i) %>% count(microwave)),
+      writeCategories(data %>% filter(cluster == i) %>% count(pc)),
+      writeCategories(data %>% filter(cluster == i) %>% count(disc_player)),
+      writeCategories(data %>% filter(cluster == i) %>% count(telephone)),
+      writeCategories(data %>% filter(cluster == i) %>% count(mobile)),
+      writeCategories(data %>% filter(cluster == i) %>% count(separate_or_combined_bills)),
+      writeCategories(data %>% filter(cluster == i) %>% count(payment_method)),
+      writeCategories(data %>% filter(cluster == i) %>% count(elec_amount)),
+      writeCategories(data %>% filter(cluster == i) %>% count(elec_pay_method)),
+      writeCategories(data %>% filter(cluster == i) %>% count(gas_amount)),
+      writeCategories(data %>% filter(cluster == i) %>% count(gas_pay_method))
+    )) %>% set_names(c(paste("Cluster", i, collapse = " "))))
+  }
+  return(temp)
+}
+add_temp(temp, 1, length(unique(ukhls_predict_c$cluster)), ukhls_predict_c) %>% kable()
+```
+
+##### Table B2
+```{r ukhls_cluster_other, echo = FALSE}
+add_temp(temp, 1, 3, ukhls_predict_c_other) %>% kable()
+add_temp(temp, 4, length(unique(ukhls_predict_c_other$cluster)), ukhls_predict_c_other) %>% kable()
+```
